@@ -14,29 +14,23 @@ namespace Echovoice.UniversalAnalytics
     /// </summary>
     public class UATracker
     {
-        /// <summary>
-        /// Protocol Version
-        /// https://developers.google.com/analytics/devguides/collection/protocol/v1/parameters#v
-        /// Required for all hit types.
-        /// The Protocol version. The current value is '1'. This will only change when there are changes made that are not backwards compatible.
-        /// </summary>
-        public string v = "1";
-
-        /// <summary>
-        /// Tracking ID / Web Property ID
-        /// https://developers.google.com/analytics/devguides/collection/protocol/v1/parameters#tid
-        /// Required for all hit types.
-        /// The tracking ID / web property ID. The format is UA-XXXX-Y. All collected data is associated by this ID.
-        /// </summary>
-        public string tid;
+        #region Fields
 
         /// <summary>
         /// Anonymize IP
-        /// https://developers.google.com/analytics/devguides/collection/protocol/v1/parameters#aip
-        /// Optional.
-        /// When present, the IP address of the sender will be anonymized. For example, the IP will be anonymized if any of the following parameters are present in the payload: aip=, aip=0, or aip=1
+        /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#aip Optional. When
+        /// present, the IP address of the sender will be anonymized. For example, the IP will be anonymized if any of
+        /// the following parameters are present in the payload: aip=, aip=0, or aip=1
         /// </summary>
         public bool aip = true;
+
+        /// <summary>
+        /// Tracking ID / Web Property ID
+        /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#tid Required for all
+        /// hit types. The tracking ID / web property ID. The format is UA-XXXX-Y. All collected data is associated by
+        /// this ID.
+        /// </summary>
+        public string tid;
 
         /// <summary>
         /// Use SSL for sending tracking data
@@ -44,32 +38,18 @@ namespace Echovoice.UniversalAnalytics
         public bool useSSL = true;
 
         /// <summary>
-        /// User agent to use to send GA data from, not the users useragent and built internally and then cached
+        /// Protocol Version
+        /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#v Required for all hit
+        /// types. The Protocol version. The current value is '1'. This will only change when there are changes made
+        /// that are not backwards compatible.
         /// </summary>
-        private string userAgent
-        {
-            get
-            {
-                if (!string.IsNullOrWhiteSpace(_userAgent))
-                    return _userAgent;
+        public string v = "1";
 
-                else
-                {
-                    try
-                    {
-                        _userAgent = string.Format("Tracker/1.0 ({0}; {1}; {2})", Environment.OSVersion.Platform.ToString(), Environment.OSVersion.Version.ToString(), Environment.OSVersion.VersionString);
-                    }
-                    catch
-                    {
-                        _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
-                    }
-
-                    return _userAgent;
-                }
-
-            }
-        }
         private string _userAgent = null;
+
+        #endregion Fields
+
+        #region Constructors
 
         /// <summary>
         /// Initialize a universal tracker for sending ga data
@@ -95,6 +75,10 @@ namespace Echovoice.UniversalAnalytics
             aip = Anonymize_IP;
         }
 
+        #endregion Constructors
+
+        #region Properties
+
         /// <summary>
         /// Check if the http request (current) is set
         /// </summary>
@@ -115,6 +99,35 @@ namespace Echovoice.UniversalAnalytics
                 return false;
             }
         }
+
+        /// <summary>
+        /// User agent to use to send GA data from, not the users useragent and built internally and then cached
+        /// </summary>
+        private string userAgent
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_userAgent))
+                    return _userAgent;
+                else
+                {
+                    try
+                    {
+                        _userAgent = string.Format("Tracker/1.0 ({0}; {1}; {2})", Environment.OSVersion.Platform.ToString(), Environment.OSVersion.Version.ToString(), Environment.OSVersion.VersionString);
+                    }
+                    catch
+                    {
+                        _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
+                    }
+
+                    return _userAgent;
+                }
+            }
+        }
+
+        #endregion Properties
+
+        #region Methods
 
         /// <summary>
         /// Track an event
@@ -420,7 +433,7 @@ namespace Echovoice.UniversalAnalytics
             // upfill and build
             TrackPageView((IsHttpRequestAvailable) ? new HttpContextWrapper(HttpContext.Current) : null, pageTitle, pageUrl, hostName, uaclient);
         }
-        
+
         /// <summary>
         /// Track a page view
         /// </summary>
@@ -599,93 +612,51 @@ namespace Echovoice.UniversalAnalytics
         }
 
         /// <summary>
-        /// Send the request async depending on the environment found
+        /// build the base payload for all requests regardless of type
         /// </summary>
-        /// <param name="request">the ga request to process</param>
-        private void ProcessAsync(HttpWebRequest request)
-        {
-            
-            // send async and fail silently
-            bool queued_job = false;
-
-            // check for an ASP.NET application
-            if (HostingEnvironment.ApplicationHost != null)
-            {
-                // The HostingEnvironment.QueueBackgroundWorkItem method lets you schedule small background work items.
-                // ASP.NET tracks these items and prevents IIS from abruptly terminating the worker process until all background work items have completed.
-                try
-                {
-                    HostingEnvironment.QueueBackgroundWorkItem(ct =>
-                    {
-                        try
-                        {
-                            using (WebResponse response = request.GetResponse()) { }
-                        }
-                        catch { }
-                    });
-
-                    // set the flag
-                    queued_job = true;
-                }
-                catch (InvalidOperationException)
-                {
-                    // override fail
-                    queued_job = false;
-                }
-            }
-
-            // check for either non-iis or queued fail
-            if (!queued_job)
-            {
-                Task.Factory.StartNew(() =>
-                {
-                    try
-                    {
-                        using (WebResponse response = request.GetResponse()) { }
-                    }
-                    catch { }
-                });
-            }
-        }
-
-        /// <summary>
-        /// build the simple request object
-        /// </summary>
-        /// <param name="data">serialized data for transmission</param>
-        /// <returns>the request to use in either async or sync</returns>
-        private HttpWebRequest BuildRequest(StringBuilder data)
-        {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(string.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data));
-            request.UserAgent = userAgent;
-            return request;
-        }
-
-        /// <summary>
-        /// builds the ga page track payload
-        /// </summary>
-        /// <param name="pageTitle">The title of the page / document</param>
-        /// <param name="pageUrl">The path portion of the page URL. Should begin with '/'</param>
-        /// <param name="hostName">Specifies the hostname from which content was hosted</param>
+        /// <param name="httpContext">the http context to extract data from</param>
+        /// <param name="uaclient">the client to override data in payload</param>
         /// <returns></returns>
-        private Dictionary<string, string> BuildPageTrackPayload(string pageTitle, string pageUrl, string hostName)
+        private Dictionary<string, string> BuildBasePayload(HttpContextBase httpContext, UAClient uaclient)
         {
+            // extract the request
+            HttpRequestBase request = (httpContext != null) ? httpContext.Request : null;
+
             // dictionary to make it look cleaner below
             Dictionary<string, string> parameters = new Dictionary<string, string>();
 
-            // page tracking parameters
-            parameters.Add("t", "pageview");
+            // always required parameters
+            parameters.Add("v", v);
+            parameters.Add("tid", tid);
+            parameters.Add("cid", uaclient.cid);
 
-            // hostname
-            if (!string.IsNullOrWhiteSpace(hostName))
-                parameters.Add("dh", hostName);
+            // get anonymize value
+            if (aip)
+                parameters.Add("aip", "1");
 
-            // page url
-            if (!string.IsNullOrWhiteSpace(pageUrl))
-                parameters.Add("dp", pageUrl);
+            // user agent user agent override first
+            if (!string.IsNullOrWhiteSpace(uaclient.ua))
+                parameters.Add("ua", uaclient.ua);
 
-            // page title
-            if (!string.IsNullOrWhiteSpace(pageTitle))
-                parameters.Add("dt", pageTitle);
+            // user agent extracted from the request
+            else if (request != null && !string.IsNullOrWhiteSpace(request.UserAgent))
+                parameters.Add("ua", request.UserAgent);
+
+            // ip address ip address override first
+            if (!string.IsNullOrWhiteSpace(uaclient.uip))
+                parameters.Add("uip", uaclient.uip);
+
+            // ip extracted from the request, make sure this isnt a local request as well
+            else if (request != null && !request.IsLocal && !string.IsNullOrWhiteSpace(request.UserHostAddress))
+                parameters.Add("uip", request.UserHostAddress);
+
+            // document encoding, skip default de=UTF-8
+            if (request != null && request.ContentEncoding != null && !string.IsNullOrWhiteSpace(request.ContentEncoding.HeaderName) && request.ContentEncoding.HeaderName.ToUpper() != "UTF-8")
+                parameters.Add("de", request.ContentEncoding.HeaderName.ToUpper());
+
+            // user language
+            if (request != null && request.UserLanguages != null && request.UserLanguages.Length > 0)
+                parameters.Add("ul", string.Join(";", request.UserLanguages));
 
             // end
             return parameters;
@@ -728,53 +699,31 @@ namespace Echovoice.UniversalAnalytics
         }
 
         /// <summary>
-        /// build the base payload for all requests regardless of type
+        /// builds the ga page track payload
         /// </summary>
-        /// <param name="httpContext">the http context to extract data from</param>
-        /// <param name="uaclient">the client to override data in payload</param>
+        /// <param name="pageTitle">The title of the page / document</param>
+        /// <param name="pageUrl">The path portion of the page URL. Should begin with '/'</param>
+        /// <param name="hostName">Specifies the hostname from which content was hosted</param>
         /// <returns></returns>
-        private Dictionary<string, string> BuildBasePayload(HttpContextBase httpContext, UAClient uaclient)
+        private Dictionary<string, string> BuildPageTrackPayload(string pageTitle, string pageUrl, string hostName)
         {
-            // extract the request
-            HttpRequestBase request = (httpContext != null) ? httpContext.Request : null;
-
             // dictionary to make it look cleaner below
             Dictionary<string, string> parameters = new Dictionary<string, string>();
 
-            // always required parameters
-            parameters.Add("v", v);
-            parameters.Add("tid", tid);
-            parameters.Add("cid", uaclient.cid);
+            // page tracking parameters
+            parameters.Add("t", "pageview");
 
-            // get anonymize value
-            if (aip)
-                parameters.Add("aip", "1");
+            // hostname
+            if (!string.IsNullOrWhiteSpace(hostName))
+                parameters.Add("dh", hostName);
 
-            // user agent
-            // user agent override first
-            if (!string.IsNullOrWhiteSpace(uaclient.ua))
-                parameters.Add("ua", uaclient.ua);
+            // page url
+            if (!string.IsNullOrWhiteSpace(pageUrl))
+                parameters.Add("dp", pageUrl);
 
-            // user agent extracted from the request
-            else if (request != null && !string.IsNullOrWhiteSpace(request.UserAgent))
-                parameters.Add("ua", request.UserAgent);
-
-            // ip address
-            // ip address override first
-            if (!string.IsNullOrWhiteSpace(uaclient.uip))
-                parameters.Add("uip", uaclient.uip);
-
-            // ip extracted from the request, make sure this isnt a local request as well
-            else if (request != null && !request.IsLocal && !string.IsNullOrWhiteSpace(request.UserHostAddress))
-                parameters.Add("uip", request.UserHostAddress);
-
-            // document encoding, skip default de=UTF-8
-            if (request != null && request.ContentEncoding != null && !string.IsNullOrWhiteSpace(request.ContentEncoding.HeaderName) && request.ContentEncoding.HeaderName.ToUpper() != "UTF-8")
-                parameters.Add("de", request.ContentEncoding.HeaderName.ToUpper());
-
-            // user language
-            if (request != null && request.UserLanguages != null && request.UserLanguages.Length > 0)
-                parameters.Add("ul", string.Join(";", request.UserLanguages));
+            // page title
+            if (!string.IsNullOrWhiteSpace(pageTitle))
+                parameters.Add("dt", pageTitle);
 
             // end
             return parameters;
@@ -788,7 +737,7 @@ namespace Echovoice.UniversalAnalytics
         /// <returns></returns>
         private StringBuilder BuildPayload(Dictionary<string, string> basePayload, Dictionary<string, string> actionPayload)
         {
-            // string  builder
+            // string builder
             StringBuilder data = new StringBuilder();
 
             // convert and encode the base payload
@@ -803,5 +752,69 @@ namespace Echovoice.UniversalAnalytics
             // end
             return data;
         }
+
+        /// <summary>
+        /// build the simple request object
+        /// </summary>
+        /// <param name="data">serialized data for transmission</param>
+        /// <returns>the request to use in either async or sync</returns>
+        private HttpWebRequest BuildRequest(StringBuilder data)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(string.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data));
+            request.UserAgent = userAgent;
+            return request;
+        }
+
+        /// <summary>
+        /// Send the request async depending on the environment found
+        /// </summary>
+        /// <param name="request">the ga request to process</param>
+        private void ProcessAsync(HttpWebRequest request)
+        {
+            // send async and fail silently
+            bool queued_job = false;
+
+            // check for an ASP.NET application
+            if (HostingEnvironment.ApplicationHost != null)
+            {
+                // The HostingEnvironment.QueueBackgroundWorkItem method lets you schedule small background work items.
+                // ASP.NET tracks these items and prevents IIS from abruptly terminating the worker process until all
+                // background work items have completed.
+                try
+                {
+                    //HostingEnvironment.QueueBackgroundWorkItem(ct =>
+                    //{
+                    //    try
+                    //    {
+                    //        using (WebResponse response = request.GetResponse()) { }
+                    //    }
+                    //    catch { }
+                    //});
+
+                    // set the flag
+                    //queued_job = true;
+                }
+                catch (InvalidOperationException)
+                {
+                    // override fail
+                    queued_job = false;
+                }
+            }
+
+            // check for either non-iis or queued fail
+            if (!queued_job)
+            {
+                Task.Factory.StartNew(() =>
+                {
+                    try
+                    {
+                        using (WebResponse response = request.GetResponse()) { }
+                    }
+                    catch { }
+                });
+            }
+        }
+
+        #endregion Methods
     }
 }

@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0"?>
-<package >
+<package>
   <metadata>
     <id>UniversalAnalytics</id>
     <version>$version$</version>
@@ -15,9 +15,4 @@
     <language>en-US</language>
     <tags>Google Universal Analytics Tracker Measurement Protocol Proctorio</tags>
   </metadata>
-  <files>
-    <file src="UniversalAnalytics.dll" target="lib" />
-    <file src="UniversalAnalytics.pdb" target="lib" />
-    <file src="UniversalAnalytics.xml" target="lib" />
-  </files>
 </package>
