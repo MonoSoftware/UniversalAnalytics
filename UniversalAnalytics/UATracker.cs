@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Hosting;
@@ -12,7 +13,7 @@ namespace Echovoice.UniversalAnalytics
     /// <summary>
     /// Tracker class for Universal Analytics
     /// </summary>
-    public class UATracker
+    public class UATracker : IDisposable
     {
         #region Fields
 
@@ -26,9 +27,8 @@ namespace Echovoice.UniversalAnalytics
 
         /// <summary>
         /// Tracking ID / Web Property ID
-        /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#tid Required for all
-        /// hit types. The tracking ID / web property ID. The format is UA-XXXX-Y. All collected data is associated by
-        /// this ID.
+        /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#tid Required for all hit
+        /// types. The tracking ID / web property ID. The format is UA-XXXX-Y. All collected data is associated by this ID.
         /// </summary>
         public string tid;
 
@@ -40,11 +40,12 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Protocol Version
         /// https: //developers.google.com/analytics/devguides/collection/protocol/v1/parameters#v Required for all hit
-        /// types. The Protocol version. The current value is '1'. This will only change when there are changes made
-        /// that are not backwards compatible.
+        /// types. The Protocol version. The current value is '1'. This will only change when there are changes made that
+        /// are not backwards compatible.
         /// </summary>
         public string v = "1";
 
+        private static readonly MeteringDataQueue dataQueue = new MeteringDataQueue();
         private string _userAgent = null;
 
         #endregion Fields
@@ -59,6 +60,8 @@ namespace Echovoice.UniversalAnalytics
         {
             // set the tracker id
             tid = Tracking_ID;
+
+            BackgroundProcessingAsync();
         }
 
         /// <summary>
@@ -73,11 +76,37 @@ namespace Echovoice.UniversalAnalytics
 
             // set the anon flag
             aip = Anonymize_IP;
+
+            BackgroundProcessingAsync();
         }
 
         #endregion Constructors
 
         #region Properties
+
+        /// <summary>
+        /// Gets the compiler buffer.
+        /// </summary>
+        /// <value>The compiler buffer.</value>
+        protected int CompilerBuffer
+        {
+            get
+            {
+                return 20000;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the cancellation token.
+        /// </summary>
+        /// <value>The cancellation token.</value>
+        private CancellationToken CancellationToken { get; set; }
+
+        /// <summary>
+        /// Gets or sets the cancellation token source.
+        /// </summary>
+        /// <value>The cancellation token source.</value>
+        private CancellationTokenSource CancellationTokenSource { get; set; }
 
         /// <summary>
         /// Check if the http request (current) is set
@@ -128,6 +157,18 @@ namespace Echovoice.UniversalAnalytics
         #endregion Properties
 
         #region Methods
+
+        /// <summary>
+        /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+        /// </summary>
+        public void Dispose()
+        {
+            CancellationTokenSource.Cancel();
+            if (dataQueue != null)
+            {
+                DequeueAsync(1000000);
+            }
+        }
 
         /// <summary>
         /// Track an event
@@ -215,12 +256,7 @@ namespace Echovoice.UniversalAnalytics
             // build the http request
             HttpWebRequest request = BuildRequest(data);
 
-            // send sync and fail silently
-            try
-            {
-                using (WebResponse response = request.GetResponse()) { }
-            }
-            catch { }
+            dataQueue.EnqueueAsync(request);
         }
 
         /// <summary>
@@ -456,12 +492,7 @@ namespace Echovoice.UniversalAnalytics
             // build the http request
             HttpWebRequest request = BuildRequest(data);
 
-            // send sync and fail silently
-            try
-            {
-                using (WebResponse response = request.GetResponse()) { }
-            }
-            catch { }
+            dataQueue.EnqueueAsync(request);
         }
 
         /// <summary>
@@ -609,6 +640,88 @@ namespace Echovoice.UniversalAnalytics
 
             // send it async
             ProcessAsync(request);
+        }
+
+        /// <summary>
+        /// Asynchronously performs backgrounds processing.
+        /// </summary>
+        /// <returns></returns>
+        protected virtual async Task BackgroundProcessingAsync()
+        {
+            CancellationTokenSource = new CancellationTokenSource();
+            CancellationToken = CancellationTokenSource.Token;
+            while (!CancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    SendDataAsync();
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
+                await Task.Delay(1 * 60 * 1000, CancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously dequeues <see cref="HttpWebRequest" /> s.
+        /// </summary>
+        /// <param name="compilerBuffer">The compiler buffer.</param>
+        /// <returns>Collection of <see cref="HttpWebRequest" /> s.</returns>
+        protected async Task<IEnumerable<HttpWebRequest>> DequeueAsync(int compilerBuffer)
+        {
+            List<HttpWebRequest> data = new List<HttpWebRequest>();
+            HttpWebRequest mData = await dataQueue.DequeueAsync();
+            while (mData != null && data.Count <= compilerBuffer)
+            {
+                data.Add(mData);
+                mData = await dataQueue.DequeueAsync();
+            }
+            return data;
+        }
+
+        /// <summary>
+        /// Asynchronously sends the data.
+        /// </summary>
+        /// <returns></returns>
+        protected async Task SendDataAsync()
+        {
+            try
+            {
+                var data = await DequeueAsync(CompilerBuffer);
+                int page = 0;
+                int rpp = 1000;
+                var records = data.Skip(page * rpp).Take(rpp).ToList();
+                while (records != null && records.Count > 0)
+                {
+                    try
+                    {
+                        List<Task<WebResponse>> tasks = new List<Task<WebResponse>>();
+                        foreach (var request in records)
+                        {
+                            tasks.Add(request.GetResponseAsync());
+                        }
+                        Task.WhenAll(tasks).ContinueWith(p =>
+                        {
+                            foreach (var item in p.Result)
+                            {
+                                item.Dispose();
+                            }
+                        });
+                    }
+                    catch
+                    {
+                    }
+                    page += 1;
+                    records = data.Skip(page * rpp).Take(rpp).ToList();
+                }
+                GC.Collect();
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
         }
 
         /// <summary>
@@ -804,14 +917,7 @@ namespace Echovoice.UniversalAnalytics
             // check for either non-iis or queued fail
             if (!queued_job)
             {
-                Task.Factory.StartNew(() =>
-                {
-                    try
-                    {
-                        using (WebResponse response = request.GetResponse()) { }
-                    }
-                    catch { }
-                });
+                dataQueue.EnqueueAsync(request);
             }
         }
 
