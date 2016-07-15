@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
-using System.Web.Hosting;
 
 namespace Echovoice.UniversalAnalytics
 {
@@ -45,12 +44,22 @@ namespace Echovoice.UniversalAnalytics
         /// </summary>
         public string v = "1";
 
-        private static readonly MeteringDataQueue dataQueue = new MeteringDataQueue();
-        private string _userAgent = null;
+        private static string _userAgent = null;
+        private static MeteringDataQueue dataQueue = new MeteringDataQueue();
+        private static HttpClient httpClient = null;
 
         #endregion Fields
 
         #region Constructors
+
+        /// <summary>
+        /// Initializes the <see cref="UATracker" /> class.
+        /// </summary>
+        static UATracker()
+        {
+            httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", userAgent);
+        }
 
         /// <summary>
         /// Initialize a universal tracker for sending ga data
@@ -97,6 +106,33 @@ namespace Echovoice.UniversalAnalytics
         }
 
         /// <summary>
+        /// User agent to use to send GA data from, not the users useragent and built internally and then cached
+        /// </summary>
+        private static string userAgent
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_userAgent))
+                {
+                    return _userAgent;
+                }
+                else
+                {
+                    try
+                    {
+                        _userAgent = string.Format("Tracker/1.0 ({0}; {1}; {2})", Environment.OSVersion.Platform.ToString(), Environment.OSVersion.Version.ToString(), Environment.OSVersion.VersionString);
+                    }
+                    catch
+                    {
+                         _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
+                    }
+
+                    return _userAgent;
+                }
+            }
+        }
+
+        /// <summary>
         /// Gets or sets the cancellation token.
         /// </summary>
         /// <value>The cancellation token.</value>
@@ -129,31 +165,6 @@ namespace Echovoice.UniversalAnalytics
             }
         }
 
-        /// <summary>
-        /// User agent to use to send GA data from, not the users useragent and built internally and then cached
-        /// </summary>
-        private string userAgent
-        {
-            get
-            {
-                if (!string.IsNullOrWhiteSpace(_userAgent))
-                    return _userAgent;
-                else
-                {
-                    try
-                    {
-                        _userAgent = string.Format("Tracker/1.0 ({0}; {1}; {2})", Environment.OSVersion.Platform.ToString(), Environment.OSVersion.Version.ToString(), Environment.OSVersion.VersionString);
-                    }
-                    catch
-                    {
-                        _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
-                    }
-
-                    return _userAgent;
-                }
-            }
-        }
-
         #endregion Properties
 
         #region Methods
@@ -166,7 +177,7 @@ namespace Echovoice.UniversalAnalytics
             CancellationTokenSource.Cancel();
             if (dataQueue != null)
             {
-                DequeueAsync(1000000);
+                dataQueue = null;
             }
         }
 
@@ -253,10 +264,7 @@ namespace Echovoice.UniversalAnalytics
             // build the payload
             StringBuilder data = BuildPayload(BuildBasePayload(httpContext, uaclient), BuildEventTrackPayload(eventCategory, eventAction, eventLabel, eventValue));
 
-            // build the http request
-            HttpWebRequest request = BuildRequest(data);
-
-            dataQueue.EnqueueAsync(request);
+            dataQueue.EnqueueAsync(data);
         }
 
         /// <summary>
@@ -342,11 +350,7 @@ namespace Echovoice.UniversalAnalytics
             // build the payload
             StringBuilder data = BuildPayload(BuildBasePayload(httpContext, uaclient), BuildEventTrackPayload(eventCategory, eventAction, eventLabel, eventValue));
 
-            // build the http request
-            HttpWebRequest request = BuildRequest(data);
-
-            // send it async
-            ProcessAsync(request);
+            dataQueue.EnqueueAsync(data);
         }
 
         /// <summary>
@@ -489,10 +493,7 @@ namespace Echovoice.UniversalAnalytics
             // build the payload
             StringBuilder data = BuildPayload(BuildBasePayload(httpContext, uaclient), BuildPageTrackPayload(pageTitle, pageUrl, hostName));
 
-            // build the http request
-            HttpWebRequest request = BuildRequest(data);
-
-            dataQueue.EnqueueAsync(request);
+            dataQueue.EnqueueAsync(data);
         }
 
         /// <summary>
@@ -635,11 +636,7 @@ namespace Echovoice.UniversalAnalytics
             // build the payload
             StringBuilder data = BuildPayload(BuildBasePayload(httpContext, uaclient), BuildPageTrackPayload(pageTitle, pageUrl, hostName));
 
-            // build the http request
-            HttpWebRequest request = BuildRequest(data);
-
-            // send it async
-            ProcessAsync(request);
+            dataQueue.EnqueueAsync(data);
         }
 
         /// <summary>
@@ -665,14 +662,14 @@ namespace Echovoice.UniversalAnalytics
         }
 
         /// <summary>
-        /// Asynchronously dequeues <see cref="HttpWebRequest" /> s.
+        /// Asynchronously dequeues <see cref="StringBuilder" /> s.
         /// </summary>
         /// <param name="compilerBuffer">The compiler buffer.</param>
-        /// <returns>Collection of <see cref="HttpWebRequest" /> s.</returns>
-        protected async Task<IEnumerable<HttpWebRequest>> DequeueAsync(int compilerBuffer)
+        /// <returns>Collection of <see cref="StringBuilder" /> s.</returns>
+        protected async Task<IEnumerable<StringBuilder>> DequeueAsync(int compilerBuffer)
         {
-            List<HttpWebRequest> data = new List<HttpWebRequest>();
-            HttpWebRequest mData = await dataQueue.DequeueAsync();
+            List<StringBuilder> data = new List<StringBuilder>();
+            StringBuilder mData = await dataQueue.DequeueAsync();
             while (mData != null && data.Count <= compilerBuffer)
             {
                 data.Add(mData);
@@ -697,18 +694,12 @@ namespace Echovoice.UniversalAnalytics
                 {
                     try
                     {
-                        List<Task<WebResponse>> tasks = new List<Task<WebResponse>>();
-                        foreach (var request in records)
+                        List<Task> tasks = new List<Task>();
+                        foreach (var requestData in records)
                         {
-                            tasks.Add(request.GetResponseAsync());
+                            tasks.Add(SendRequestAsync(requestData));
                         }
-                        Task.WhenAll(tasks).ContinueWith(p =>
-                        {
-                            foreach (var item in p.Result)
-                            {
-                                item.Dispose();
-                            }
-                        });
+                        Task.WhenAll(tasks);
                     }
                     catch
                     {
@@ -867,58 +858,14 @@ namespace Echovoice.UniversalAnalytics
         }
 
         /// <summary>
-        /// build the simple request object
+        /// asynchronously sends the request.
         /// </summary>
         /// <param name="data">serialized data for transmission</param>
-        /// <returns>the request to use in either async or sync</returns>
-        private HttpWebRequest BuildRequest(StringBuilder data)
+        /// <returns></returns>
+        private Task<HttpResponseMessage> SendRequestAsync(StringBuilder data)
         {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(string.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data));
-            request.UserAgent = userAgent;
-            return request;
-        }
-
-        /// <summary>
-        /// Send the request async depending on the environment found
-        /// </summary>
-        /// <param name="request">the ga request to process</param>
-        private void ProcessAsync(HttpWebRequest request)
-        {
-            // send async and fail silently
-            bool queued_job = false;
-
-            // check for an ASP.NET application
-            if (HostingEnvironment.ApplicationHost != null)
-            {
-                // The HostingEnvironment.QueueBackgroundWorkItem method lets you schedule small background work items.
-                // ASP.NET tracks these items and prevents IIS from abruptly terminating the worker process until all
-                // background work items have completed.
-                try
-                {
-                    //HostingEnvironment.QueueBackgroundWorkItem(ct =>
-                    //{
-                    //    try
-                    //    {
-                    //        using (WebResponse response = request.GetResponse()) { }
-                    //    }
-                    //    catch { }
-                    //});
-
-                    // set the flag
-                    //queued_job = true;
-                }
-                catch (InvalidOperationException)
-                {
-                    // override fail
-                    queued_job = false;
-                }
-            }
-
-            // check for either non-iis or queued fail
-            if (!queued_job)
-            {
-                dataQueue.EnqueueAsync(request);
-            }
+            var request = new HttpRequestMessage(HttpMethod.Get, String.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data));
+            return httpClient.SendAsync(request);
         }
 
         #endregion Methods

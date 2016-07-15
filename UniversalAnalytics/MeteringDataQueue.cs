@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Echovoice.UniversalAnalytics
@@ -13,7 +13,7 @@ namespace Echovoice.UniversalAnalytics
     {
         #region Fields
 
-        private ConcurrentQueue<HttpWebRequest> rawData = new ConcurrentQueue<HttpWebRequest>();
+        private ConcurrentQueue<StringBuilder> rawData = new ConcurrentQueue<StringBuilder>();
 
         #endregion Fields
 
@@ -22,7 +22,7 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously gets the metric data item count.
         /// </summary>
-        /// <returns>Number of <see cref="ICoreMeteringData" /> items in the queue.</returns>
+        /// <returns>Number of <see cref="StringBuilder" /> items in the queue.</returns>
         public Task<int> CountAsync()
         {
             return CountDataAsync();
@@ -31,8 +31,8 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously dequeue the metric data.
         /// </summary>
-        /// <returns><see cref="ICoreMeteringData" />.</returns>
-        public Task<HttpWebRequest> DequeueAsync()
+        /// <returns><see cref="StringBuilder" />.</returns>
+        public Task<StringBuilder> DequeueAsync()
         {
             return DequeueDataAsync();
         }
@@ -40,9 +40,9 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously enqueue metric to temporary buffer.
         /// </summary>
-        /// <param name="e">The <see cref="ICoreMeteringData" /> collection.</param>
+        /// <param name="e">The <see cref="StringBuilder" /> collection.</param>
         /// <returns></returns>
-        public virtual Task EnqueueAsync(IEnumerable<HttpWebRequest> e)
+        public virtual Task EnqueueAsync(IEnumerable<StringBuilder> e)
         {
             return EnqueueDataAsync(e);
         }
@@ -50,18 +50,18 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously enqueue metric to temporary buffer.
         /// </summary>
-        /// <param name="e">The <see cref="ICoreMeteringData" />.</param>
+        /// <param name="e">The <see cref="StringBuilder" />.</param>
         /// <returns></returns>
-        public Task EnqueueAsync(HttpWebRequest e)
+        public Task EnqueueAsync(StringBuilder e)
         {
-            return EnqueueAsync(new List<HttpWebRequest>() { e });
+            return EnqueueAsync(new List<StringBuilder>() { e });
         }
 
         /// <summary>
         /// Asynchronously peek the metric data.
         /// </summary>
-        /// <returns><see cref="ICoreMeteringData" />.</returns>
-        public Task<HttpWebRequest> PeekAsync()
+        /// <returns><see cref="StringBuilder" />.</returns>
+        public Task<StringBuilder> PeekAsync()
         {
             return PeekDataAsync();
         }
@@ -69,7 +69,7 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously gets the metric data item count.
         /// </summary>
-        /// <returns>Number of <see cref="ICoreMeteringData" /> items in the queue.</returns>
+        /// <returns>Number of <see cref="StringBuilder" /> items in the queue.</returns>
         protected virtual Task<int> CountDataAsync()
         {
             return Task.FromResult(rawData.Count);
@@ -78,15 +78,15 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously dequeue the metric data.
         /// </summary>
-        /// <returns><see cref="ICoreMeteringData" />.</returns>
-        protected virtual Task<HttpWebRequest> DequeueDataAsync()
+        /// <returns><see cref="StringBuilder" />.</returns>
+        protected virtual Task<StringBuilder> DequeueDataAsync()
         {
-            HttpWebRequest result;
+            StringBuilder result;
             if (rawData.TryDequeue(out result))
             {
                 return Task.FromResult(result);
             }
-            return Task.FromResult(default(HttpWebRequest));
+            return Task.FromResult(default(StringBuilder));
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace Echovoice.UniversalAnalytics
         /// </summary>
         /// <param name="data">The data.</param>
         /// <returns></returns>
-        protected virtual Task EnqueueDataAsync(IEnumerable<HttpWebRequest> data)
+        protected virtual Task EnqueueDataAsync(IEnumerable<StringBuilder> data)
         {
             foreach (var item in data)
             {
@@ -106,15 +106,15 @@ namespace Echovoice.UniversalAnalytics
         /// <summary>
         /// Asynchronously peek the metric data.
         /// </summary>
-        /// <returns><see cref="ICoreMeteringData" />.</returns>
-        protected virtual Task<HttpWebRequest> PeekDataAsync()
+        /// <returns><see cref="StringBuilder" />.</returns>
+        protected virtual Task<StringBuilder> PeekDataAsync()
         {
-            HttpWebRequest result;
+            StringBuilder result;
             if (rawData.TryPeek(out result))
             {
                 return Task.FromResult(result);
             }
-            return Task.FromResult(default(HttpWebRequest));
+            return Task.FromResult(default(StringBuilder));
         }
 
         #endregion Methods
