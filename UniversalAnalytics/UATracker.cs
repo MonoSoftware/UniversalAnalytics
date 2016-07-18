@@ -101,7 +101,7 @@ namespace Echovoice.UniversalAnalytics
         {
             get
             {
-                return 20000;
+                return 5000;
             }
         }
 
@@ -124,7 +124,7 @@ namespace Echovoice.UniversalAnalytics
                     }
                     catch
                     {
-                         _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
+                        _userAgent = "Tracker/1.0 (+https://github.com/proctorio/UniversalAnalyticsTracker)";
                     }
 
                     return _userAgent;
@@ -657,7 +657,7 @@ namespace Echovoice.UniversalAnalytics
                 {
                     throw ex;
                 }
-                await Task.Delay(1 * 60 * 1000, CancellationToken);
+                await Task.Delay(15 * 1000, CancellationToken);
             }
         }
 
@@ -694,12 +694,10 @@ namespace Echovoice.UniversalAnalytics
                 {
                     try
                     {
-                        List<Task> tasks = new List<Task>();
                         foreach (var requestData in records)
                         {
-                            tasks.Add(SendRequestAsync(requestData));
+                            SendRequestAsync(requestData);
                         }
-                        Task.WhenAll(tasks);
                     }
                     catch
                     {
@@ -862,10 +860,16 @@ namespace Echovoice.UniversalAnalytics
         /// </summary>
         /// <param name="data">serialized data for transmission</param>
         /// <returns></returns>
-        private Task<HttpResponseMessage> SendRequestAsync(StringBuilder data)
+        private async Task SendRequestAsync(StringBuilder data)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, String.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data));
-            return httpClient.SendAsync(request);
+            using (var request = new HttpRequestMessage(HttpMethod.Get, String.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data)))
+            {
+                using (var result = await httpClient.SendAsync(request))
+                {
+                    data.Length = 0;
+                    data.Capacity = 0;
+                }
+            }
         }
 
         #endregion Methods
