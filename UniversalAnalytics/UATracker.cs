@@ -862,6 +862,7 @@ namespace Echovoice.UniversalAnalytics
         /// <returns></returns>
         private async Task SendRequestAsync(StringBuilder data)
         {
+            // build the http request
             using (var request = new HttpRequestMessage(HttpMethod.Get, String.Format("{0}?{1}", ((useSSL) ? "https://ssl.google-analytics.com/collect" : "http://www.google-analytics.com/collect"), data)))
             {
                 using (var result = await httpClient.SendAsync(request))
